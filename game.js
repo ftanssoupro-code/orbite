@@ -175,7 +175,7 @@ const Game = {
   todayBoss() { const d = Math.floor(Date.now() / 86400000); return BOSSES[d % BOSSES.length]; },
   start(kind, n) {
     this.combo = 0; this.best = 0; this.koShown = false; this.rankUp = null; this.taunt = "";
-    this.boss = kind === "mission" || kind === "bilan" ? this.todayBoss() : null;
+    this.boss = kind === "mission" || kind === "bilan" || kind === "coach" ? this.todayBoss() : null;
     this.max = this.hp = Math.max(30, Math.ceil(n * 0.6) * 10);
     this.line = pickOne(this.buddy().hi); this.mood = "wave"; this.fresh = true;
   },

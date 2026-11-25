@@ -284,6 +284,7 @@ const Store={S:normalize(null),sessions:[],ready:false,chain:Promise.resolve(),
   const r2=await sb.from('sessions').select('data').eq('user_id',user.id).order('ts',{ascending:false}).limit(400);
   if(r2.error)throw r2.error;
   this.sessions=(r2.data||[]).map(r=>r.data).reverse();
+  try{const rc=await sb.from('coach').select('data').eq('user_id',user.id).maybeSingle();this.coach=rc.data?rc.data.data:null}catch(e){this.coach=null}
   const pend=lsGet(pendKey())||[];
   if(pend.length){const ids=new Set(this.sessions.map(x=>x.id));pend.forEach(x=>{if(!ids.has(x.id))this.sessions.push(x)});this.flush()}
   lsSet('orbite.state.'+user.id,this.S);this.ready=true;setSync(true);
@@ -342,8 +343,46 @@ function planMission(n){
  const others=shuffle(['francais','anglais','sciences','histgeo','culture','argent','code']);
  const picks=[...base,...others];
  const weak=DOMAINS.filter(d=>d.k!=='defi').sort((a,b)=>S().levels[a.k]-S().levels[b.k]).map(d=>d.k);
- let i=0;while(picks.length<n){picks.push(weak[i%3]);i++}
+ const focus=((Store.coach&&Store.coach.focus)||[]).filter(k=>DM[k]&&k!=='defi');const extra=focus.length?focus:weak.slice(0,3);let i=0;while(picks.length<n){picks.push(extra[i%extra.length]);i++}
  return shuffle(picks.slice(0,n));
+}
+
+/* ================= Coach : devoirs et questions sur mesure ================= */
+const validCoachQ=q=>q&&DM[q.d]&&typeof q.q==='string'&&Array.isArray(q.choices)&&q.choices.length===4;
+const coachQ=o=>({d:o.d,lvl:clamp(Math.round(Number(o.lvl)||3),1,10),type:'mcq',q:String(o.q).slice(0,500),choices:o.choices.map(c=>String(c).slice(0,200)),expl:String(o.expl||'').slice(0,600),src:'coach'});
+function coachDevoirs(){
+ const co=Store.coach,st=S();
+ if(co&&Array.isArray(co.devoirs)&&co.devoirs.length)return co.devoirs.slice(0,8);
+ return st.placementDone?[{type:'mission',label:'Faire la mission du jour'},{type:'sprint',label:'Faire un sprint de calcul de 60 secondes'}]:[{type:'bilan',label:'Faire le bilan de départ (22 questions)'}];
+}
+function devoirDone(dv,i){
+ const co=Store.coach,st=S(),today=dayKey();const todays=Store.sessions.filter(x=>x.day===today);
+ if(dv.type==='bilan')return !!st.placementDone;
+ if(dv.type==='mission'||dv.type==='sprint')return todays.some(x=>x.kind===dv.type);
+ if(dv.type==='libre')return todays.some(x=>x.kind==='libre'&&x.answers&&x.answers[0]&&x.answers[0].d===dv.d);
+ if(dv.type==='coach')return !!(co&&st.coachDone===co.id);
+ if(dv.type==='perso')return !!(co&&st.perso&&st.perso[co.id+':'+i]);
+ return false;
+}
+function coachCard(readOnly){
+ const co=Store.coach,st=S();
+ const hasQs=!!(co&&Array.isArray(co.questions)&&co.questions.filter(validCoachQ).length);
+ const devs=coachDevoirs();
+ const states=devs.map((dv,i)=>devoirDone(dv,i));
+ const all=states.length&&states.every(Boolean);
+ if(all&&co&&!readOnly&&st.coachBonus!==co.id){st.coachBonus=co.id;st.xp+=50;Store.save();setTimeout(()=>{Game.sfx('win');confetti(80)},200)}
+ const items=devs.map((dv,i)=>{const done=states[i];
+  const go=()=>{Game.sfx('tap');if(dv.type==='bilan')startSession('bilan');else if(dv.type==='mission')startSession('mission');else if(dv.type==='sprint')startSession('sprint');else if(dv.type==='libre'&&DM[dv.d])startSession('libre',{d:dv.d});else if(dv.type==='coach'&&hasQs)startSession('coach')};
+  const canGo=!readOnly&&!done&&(['bilan','mission','sprint'].includes(dv.type)||(dv.type==='libre'&&DM[dv.d])||(dv.type==='coach'&&hasQs));
+  const perso=!readOnly&&!done&&dv.type==='perso'&&co;
+  return h('li',{class:'devoir'+(done?' done':'')},h('span',{class:'check','aria-hidden':'true'},done?'✓':String(i+1)),h('span',{class:'dv-t'},String(dv.label||'').slice(0,160)),
+   done?h('span',{class:'dv-ok'},'Fait'):canGo?h('button',{class:'btn small',onclick:go},'Go !'):perso?h('button',{class:'btn small ghost',onclick:()=>{st.perso=Object.assign({},st.perso);st.perso[co.id+':'+i]=true;Store.save();Game.sfx('ok');confetti(25);render()}},'C\'est fait'):null)});
+ const doneN=states.filter(Boolean).length;
+ const msg=co&&co.message?String(co.message).slice(0,600):(st.placementDone?'Une mission par jour, et tu deviendras imbattable. Ton coach prépare tes prochains devoirs.':'Bienvenue dans Orbite ! Commence par ton bilan : il me dira exactement où tu en es.');
+ return h('div',{class:'card coach-card pop'},
+  h('div',{class:'row',style:'justify-content:space-between'},h('p',{class:'label',style:'color:var(--gold)'},'Devoirs du Coach'+(co&&co.date?' · '+String(co.date).slice(0,10).split('-').reverse().join('/'):'')),h('span',{class:'chip '+(all?'mint':'gold')},`${doneN} / ${devs.length}`+(all?' · bonus +50 XP':''))),
+  h('div',{class:'coach-msg'},h('b',{},'Le Coach : '),msg),
+  h('ul',{class:'devoirs'},items));
 }
 
 /* ================= Session de jeu ================= */
@@ -354,16 +393,17 @@ function startSession(kind,opts={}){
  else if(kind==='bilan'){plan=[];DOMAINS.filter(d=>d.k!=='defi').forEach(d=>{plan.push(d.k,d.k)});plan=shuffle(plan)}
  else if(kind==='libre')plan=Array(8).fill(opts.d);
  else if(kind==='sprint')plan=[];
+ else if(kind==='coach')plan=((Store.coach&&Store.coach.questions)||[]).filter(validCoachQ).slice(0,20).map(q=>q.d);
  if(kind==='bilan'&&!S().placementDone){DOMAINS.forEach(d=>{if(d.k!=='defi')S().levels[d.k]=3.5})}
- Session.cur={id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),kind,plan,i:0,answers:[],start:Date.now(),xp:0,before:Object.assign({},S().levels),q:null,qStart:0,defi:null};Game.start(kind,plan.length);
+ Session.cur={id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),kind,plan,i:0,answers:[],start:Date.now(),xp:0,before:Object.assign({},S().levels),q:null,qStart:0,defi:null};if(kind==='coach')Session.cur.coachQs=((Store.coach&&Store.coach.questions)||[]).filter(validCoachQ).slice(0,20);Game.start(kind,plan.length);
  const aiDomains=plan.filter(d=>!PROCEDURAL.has(d));
- if(aiDomains.length&&kind!=='sprint')AI.fetch(aiDomains.map(d=>({d,lvl:clamp(Math.round(S().levels[d]+.3),1,10)})));
+ if(aiDomains.length&&kind!=='sprint'&&kind!=='coach')AI.fetch(aiDomains.map(d=>({d,lvl:clamp(Math.round(S().levels[d]+.3),1,10)})));
  if(kind==='sprint'){startSprint();return}
  nextQuestion();
 }
 function nextQuestion(){
  const c=Session.cur;if(c.i>=c.plan.length){if(c.kind==='mission'&&!AI.off){showDefi();return}finishSession();return}
- const d=c.plan[c.i];c.q=makeQuestion(d,S().levels[d]);
+ const d=c.plan[c.i];c.q=c.kind==='coach'?coachQ(c.coachQs[c.i]):makeQuestion(d,S().levels[d]);
  if(c.q.type==='mcq'){const right=c.q.choices[0];const ord=c.q.noShuffle?c.q.choices.slice():shuffle(c.q.choices);c.q.view=ord;c.q.rightIdx=ord.indexOf(right)}
  c.qStart=Date.now();view='quiz';render();
 }
@@ -393,7 +433,8 @@ function finishSession(){
  const c=Session.cur;const st=S();
  const ok=c.answers.filter(a=>a.ok).length;
  const today=dayKey();
- if(c.kind==='mission'||c.kind==='bilan'){
+ if(c.kind==='coach'&&Store.coach){st.coachDone=Store.coach.id;c.xp+=30}
+ if(c.kind==='mission'||c.kind==='bilan'||c.kind==='coach'){
   if(st.lastDay!==today){st.streak=(st.lastDay===dayKey(addDays(new Date(),-1)))?st.streak+1:1;st.lastDay=today;st.bestStreak=Math.max(st.bestStreak||0,st.streak);c.xp+=20+st.streak*5}
  }
  if(c.kind==='bilan')st.placementDone=true;
@@ -537,6 +578,7 @@ function renderHome(){
    h('div',{style:'margin-top:14px'},h('div',{class:'row',style:'justify-content:space-between;margin-bottom:6px'},h('b',{style:'font-family:var(--f-display)'},'Rang : '+rk.name),h('span',{class:'muted mono',style:'font-size:.85rem'},rk.next?`${fmt(rk.next[0]-st.xp)} XP avant ${rk.next[1]}`:'Rang maximal')),h('div',{class:'xpbar'},h('i',{style:`width:${clamp(pct,2,100)}%`})))),
  );
  const right=h('div',{class:'card'},h('div',{class:'row',style:'justify-content:space-between'},h('h3',{},'Ta constellation'),h('span',{class:'muted',style:'font-size:.85rem'},'Touche une étoile pour t\'entraîner')),constellation());
+ app.append(coachCard());
  app.append(h('div',{class:'hero'},leftCol,right));
  app.append(Game.homeCard());
 }
@@ -664,8 +706,8 @@ function renderResults(){
  const msg=pct>=85?'Performance de haut niveau.':pct>=65?'Très bien. Les questions vont monter d\'un cran.':pct>=45?'Bon travail. Les erreurs, c\'est là qu\'on apprend le plus.':'Session difficile : le niveau va s\'ajuster. Relis bien les explications.';
  app.append(h('div',{class:'quiz'},
   Game.resultBanner(sess),
-  h('div',{class:'card pop center',style:'padding:28px'},h('p',{class:'label'},({mission:'Mission terminée',bilan:'Bilan terminé',libre:'Entraînement terminé',sprint:'Sprint terminé'})[sess.kind]),h('p',{style:'font-family:var(--f-display);font-size:3rem;font-weight:700;line-height:1.1;margin-top:6px'},`${sess.ok} / ${sess.n}`),h('p',{class:'muted'},msg),
-   h('div',{class:'row',style:'justify-content:center;margin-top:14px'},h('span',{class:'chip gold'},`+${sess.xp} XP`),(sess.kind==='mission'||sess.kind==='bilan')?h('span',{class:'chip coral'},`Série : ${st.streak} jour${st.streak>1?'s':''}`):null,sess.defi&&sess.defi.note!=null?h('span',{class:'chip'},`Défi : ${sess.defi.note}/10`):null)),
+  h('div',{class:'card pop center',style:'padding:28px'},h('p',{class:'label'},({mission:'Mission terminée',bilan:'Bilan terminé',libre:'Entraînement terminé',sprint:'Sprint terminé',coach:'Défis du Coach terminés'})[sess.kind]),h('p',{style:'font-family:var(--f-display);font-size:3rem;font-weight:700;line-height:1.1;margin-top:6px'},`${sess.ok} / ${sess.n}`),h('p',{class:'muted'},msg),
+   h('div',{class:'row',style:'justify-content:center;margin-top:14px'},h('span',{class:'chip gold'},`+${sess.xp} XP`),(sess.kind==='mission'||sess.kind==='bilan'||sess.kind==='coach')?h('span',{class:'chip coral'},`Série : ${st.streak} jour${st.streak>1?'s':''}`):null,sess.defi&&sess.defi.note!=null?h('span',{class:'chip'},`Défi : ${sess.defi.note}/10`):null)),
   changed.length?h('div',{class:'card'},h('h3',{style:'margin-bottom:8px'},sess.kind==='bilan'?'Ton niveau de départ':'Évolution de tes niveaux'),...changed.map(k=>{const dlt=st.levels[k]-c.before[k];return h('div',{class:'lvlrow'},h('span',{class:'dchip'},h('i',{class:'dot',style:`background:${DM[k].c}`}),DM[k].n),h('span',{class:'mono'},gradeOf(st.levels[k])+'  ',h('span',{class:dlt>=0?'up':'down'},(dlt>=0?'▲ ':'▼ ')+Math.abs(dlt).toFixed(2))))})):null,
   h('div',{class:'row',style:'justify-content:center'},h('button',{class:'btn',onclick:()=>{Session.cur=null;view='home';location.hash='eleve';render()}},'Retour à la base'))));
 }
@@ -691,6 +733,7 @@ function renderParent(){
  const nm=st.name||'l\'élève';
  app.append(h('div',{},h('p',{class:'label'},`${age} ans · ${age+1} ans dans ${dleft} jour${dleft>1?'s':''} · ${st.classe||'6e'}`),h('h1',{},`Progrès de ${nm}`)));
  if(!sess.length)app.append(h('div',{class:'banner'},'Aucune session pour l\'instant. La première étape côté élève est le bilan de départ (22 questions). Les graphiques et l\'analyse apparaîtront ensuite ici, mis à jour après chaque réponse.'));
+ app.append(coachCard(true));
  // KPIs
  app.append(h('div',{class:'grid g4'},
   h('div',{class:'card kpi'},h('p',{class:'label'},'Niveau global'),h('p',{class:'v'},gradeOf(gl)),h('p',{class:'s'},gl.toFixed(2)+' / 10 · '+(adv>=0.5?`environ ${fmt(Math.round(adv*10)/10)} an${adv>=1.5?'s':''} d'avance`:adv<=-0.5?'en dessous de la 6e pour l\'instant':'au niveau de sa classe'))),
