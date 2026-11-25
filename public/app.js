@@ -355,7 +355,7 @@ function startSession(kind,opts={}){
  else if(kind==='libre')plan=Array(8).fill(opts.d);
  else if(kind==='sprint')plan=[];
  if(kind==='bilan'&&!S().placementDone){DOMAINS.forEach(d=>{if(d.k!=='defi')S().levels[d.k]=3.5})}
- Session.cur={id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),kind,plan,i:0,answers:[],start:Date.now(),xp:0,before:Object.assign({},S().levels),q:null,qStart:0,defi:null};
+ Session.cur={id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),kind,plan,i:0,answers:[],start:Date.now(),xp:0,before:Object.assign({},S().levels),q:null,qStart:0,defi:null};Game.start(kind,plan.length);
  const aiDomains=plan.filter(d=>!PROCEDURAL.has(d));
  if(aiDomains.length&&kind!=='sprint')AI.fetch(aiDomains.map(d=>({d,lvl:clamp(Math.round(S().levels[d]+.3),1,10)})));
  if(kind==='sprint'){startSprint();return}
@@ -378,9 +378,9 @@ function answer(given){
  if(q.type==='mcq'){ok=given===q.rightIdx;givenTxt=q.view[given]??'';rightTxt=q.view[q.rightIdx]}
  else if(q.type==='memory'){const g=String(given).replace(/\D/g,'');ok=g===q.answer;givenTxt=g;rightTxt=q.answer}
  else{const g=parseFloat(String(given).replace(/\s/g,'').replace(',','.'));ok=Number.isFinite(g)&&Math.abs(g-q.answer)<1e-6*Math.max(1,Math.abs(q.answer));givenTxt=String(given).trim();rightTxt=fmt(q.answer)}
- const fast=q.timed&&ms<8000;
+ const fast=q.timed&&ms<8000;Game.onAnswer(ok,q);
  updateLevel(q.d,q.lvl,ok,fast);
- const gain=ok?10+q.lvl*2+(fast?5:0):1;c.xp+=gain;
+ const gain=ok?Math.round((10+q.lvl*2+(fast?5:0))*Game.mult()):1;c.xp+=gain;
  const st=S();st.total++;if(ok)st.correct++;st.counts[q.d]=(st.counts[q.d]||0)+1;
  if(q.id){st.seen=st.seen.filter(x=>x!==q.id);st.seen.push(q.id)}
  if(q.src==='ia'){st.aiStems.push(q.q.slice(0,90));st.aiStems=st.aiStems.slice(-60)}
@@ -398,11 +398,11 @@ function finishSession(){
  }
  if(c.kind==='bilan')st.placementDone=true;
  if(c.kind==='sprint')st.sprintBest=Math.max(st.sprintBest||0,ok);
- st.xp+=c.xp;
+ const oldXp=st.xp;st.xp+=c.xp;
  const sess={id:c.id,ts:Date.now(),day:today,kind:c.kind,n:c.answers.length,ok,ms:Date.now()-c.start,xp:c.xp,global:+globalLevel().toFixed(3),levels:Object.fromEntries(Object.entries(st.levels).map(([k,v])=>[k,+v.toFixed(3)])),answers:c.answers};
  if(c.defi)sess.defi=c.defi;
  Store.addSession(sess);Store.save();
- c.done=sess;view='results';render();
+ Game.end(sess,oldXp,st.xp);c.done=sess;view='results';render();
 }
 
 /* ================= Rendu ================= */
@@ -515,7 +515,7 @@ function renderHome(){
  const st=S();const today=dayKey();const done=Store.sessions.some(x=>x.day===today&&x.kind==='mission');
  const rk=rankOf(st.xp);const pct=rk.next?((st.xp-rk.min)/(rk.next[0]-rk.min))*100:100;
  const name=st.name||'champion';
- app.append(h('div',{class:'top'},logo(),h('span',{class:'spacer'}),storageNote(),h('a',{class:'navlink',href:'#parent'},'Espace parent'),logoutBtn()));
+ app.append(h('div',{class:'top'},logo(),h('span',{class:'spacer'}),Game.muteBtn(),storageNote(),h('a',{class:'navlink',href:'#parent'},'Espace parent'),logoutBtn()));
  const leftCol=h('div',{class:'grid'},
   h('div',{},h('p',{class:'label'},new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})),h('h1',{},`Salut ${name} !`),h('p',{class:'muted',style:'margin-top:6px;max-width:46ch'},'Chaque jour, une mission courte. Les questions s\'adaptent à toi : plus tu réussis, plus elles deviennent difficiles.')),
   !st.placementDone?h('div',{class:'card mission pop'},
@@ -538,6 +538,7 @@ function renderHome(){
  );
  const right=h('div',{class:'card'},h('div',{class:'row',style:'justify-content:space-between'},h('h3',{},'Ta constellation'),h('span',{class:'muted',style:'font-size:.85rem'},'Touche une étoile pour t\'entraîner')),constellation());
  app.append(h('div',{class:'hero'},leftCol,right));
+ app.append(Game.homeCard());
 }
 
 /* ---------- Écran question ---------- */
@@ -573,7 +574,7 @@ function renderQuiz(){
   setTimeout(()=>nb.focus(),30);
  }
  card.append(body);
- app.append(h('div',{class:'quiz'},head,prog,card));
+ app.append(h('div',{class:'quiz'},head,Game.hud(),prog,card));
 }
 document.addEventListener('keydown',e=>{
  if(view!=='quiz'||!Session.cur||!Session.cur.q)return;const q=Session.cur.q;
@@ -585,7 +586,7 @@ function renderMemory(head,prog,card){
  const shown=h('div',{class:'memdigits'},q.digits.split('').join(' '));
  const bar=h('i',{});const tm=h('div',{class:'timer'},bar);
  card.append(h('div',{style:'margin-top:16px;display:flex;flex-direction:column;gap:10px'},shown,tm));
- app.append(h('div',{class:'quiz'},head,prog,card));
+ app.append(h('div',{class:'quiz'},head,Game.hud(),prog,card));
  bar.animate([{width:'100%'},{width:'0%'}],{duration:q.show,easing:'linear',fill:'forwards'});
  setTimeout(()=>{if(Session.cur!==c||c.q!==q)return;q.hidden=true;q.type='memtype';renderMemType()},q.show);
 }
@@ -602,7 +603,7 @@ function renderMemType(){
  const go=()=>{if(inp.value.trim()){q.type='memory';answer(inp.value)}};
  inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go()}});
  const card=h('div',{class:'card qcard pop'},h('p',{class:'label',style:'margin-bottom:10px'},`Question ${c.i+1} / ${c.plan.length}`),h('p',{class:'qtext'},q.back?'Écris les chiffres à l\'envers.':'Écris les chiffres dans l\'ordre.'),h('div',{class:'numrow',style:'margin-top:18px'},inp,h('button',{class:'btn',onclick:go},'Valider')));
- app.append(h('div',{class:'quiz'},head,prog,card));
+ app.append(h('div',{class:'quiz'},head,Game.hud(),prog,card));
  setTimeout(()=>inp.focus(),30);
  void fake;
 }
@@ -619,7 +620,7 @@ function renderSprint(){
  const flash=h('p',{class:'muted',style:'min-height:1.5em'},c.last||'');
  inp.addEventListener('keydown',e=>{if(e.key!=='Enter'||!inp.value.trim())return;e.preventDefault();
   const g=parseFloat(inp.value.replace(/\s/g,'').replace(',','.'));const good=Number.isFinite(g)&&Math.abs(g-q.answer)<1e-6*Math.max(1,Math.abs(q.answer));
-  const ms=Date.now()-c.qStart;c.answers.push({d:'calcul',lvl:q.lvl,ok:good,ms,q:q.q,given:inp.value.slice(0,20),right:fmt(q.answer),src:'gen'});c.plan.push('calcul');
+  Game.sfx(good?'ok':'ko');if(good)confetti(10);const ms=Date.now()-c.qStart;c.answers.push({d:'calcul',lvl:q.lvl,ok:good,ms,q:q.q,given:inp.value.slice(0,20),right:fmt(q.answer),src:'gen'});c.plan.push('calcul');
   S().total++;if(good)S().correct++;c.xp+=good?4+q.lvl:0;
   S().levels.calcul=clamp(S().levels.calcul+(good?.06:-.08),1,10);
   c.last=good?'✓ Juste':`✗ ${q.q.replace('Calcule : ','')} = ${fmt(q.answer)}`;sprintNext()});
@@ -662,6 +663,7 @@ function renderResults(){
  const pct=sess.n?Math.round(sess.ok/sess.n*100):0;
  const msg=pct>=85?'Performance de haut niveau.':pct>=65?'Très bien. Les questions vont monter d\'un cran.':pct>=45?'Bon travail. Les erreurs, c\'est là qu\'on apprend le plus.':'Session difficile : le niveau va s\'ajuster. Relis bien les explications.';
  app.append(h('div',{class:'quiz'},
+  Game.resultBanner(sess),
   h('div',{class:'card pop center',style:'padding:28px'},h('p',{class:'label'},({mission:'Mission terminée',bilan:'Bilan terminé',libre:'Entraînement terminé',sprint:'Sprint terminé'})[sess.kind]),h('p',{style:'font-family:var(--f-display);font-size:3rem;font-weight:700;line-height:1.1;margin-top:6px'},`${sess.ok} / ${sess.n}`),h('p',{class:'muted'},msg),
    h('div',{class:'row',style:'justify-content:center;margin-top:14px'},h('span',{class:'chip gold'},`+${sess.xp} XP`),(sess.kind==='mission'||sess.kind==='bilan')?h('span',{class:'chip coral'},`Série : ${st.streak} jour${st.streak>1?'s':''}`):null,sess.defi&&sess.defi.note!=null?h('span',{class:'chip'},`Défi : ${sess.defi.note}/10`):null)),
   changed.length?h('div',{class:'card'},h('h3',{style:'margin-bottom:8px'},sess.kind==='bilan'?'Ton niveau de départ':'Évolution de tes niveaux'),...changed.map(k=>{const dlt=st.levels[k]-c.before[k];return h('div',{class:'lvlrow'},h('span',{class:'dchip'},h('i',{class:'dot',style:`background:${DM[k].c}`}),DM[k].n),h('span',{class:'mono'},gradeOf(st.levels[k])+'  ',h('span',{class:dlt>=0?'up':'down'},(dlt>=0?'▲ ':'▼ ')+Math.abs(dlt).toFixed(2))))})):null,

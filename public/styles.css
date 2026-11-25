@@ -136,3 +136,73 @@ body{margin:0}
 img{max-width:100%}
 [hidden]{display:none!important}
 input,select,textarea{font-size:16px}
+
+/* ===== Couche jeu : coéquipiers, boss, combos ===== */
+.hud{display:flex;gap:12px;align-items:stretch;flex-wrap:wrap}
+.hud-buddy{display:flex;gap:10px;align-items:flex-end;flex:1 1 280px;min-width:0}
+.hud-boss{display:flex;gap:10px;align-items:center;flex:0 1 260px;min-width:0;justify-content:flex-end}
+.hud-boss-info{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}
+.buddy{width:86px;flex:none;position:relative}
+.buddy.big{width:110px}
+.buddy.mini{width:54px}
+.buddy svg{display:block;width:100%;height:auto;overflow:visible}
+.bd-body{transform-box:fill-box;transform-origin:50% 100%;animation:bd-breathe 3s ease-in-out infinite}
+.bd-eyes{transform-box:fill-box;transform-origin:center;animation:bd-blink 4.5s infinite}
+.bd-ant{transform-box:fill-box;transform-origin:50% 100%;animation:bd-bob 1.3s ease-in-out infinite alternate}
+.bd-scarf{transform-box:fill-box;transform-origin:0% 50%;animation:bd-wave 1.1s ease-in-out infinite alternate}
+.bd-light{animation:bd-glow 1.6s ease-in-out infinite alternate}
+.bd-arm-r{transform-box:fill-box;transform-origin:50% 10%}
+.buddy .mh,.buddy .ms{display:none}
+.buddy.happy .mh,.buddy.wave .mh{display:inline}.buddy.happy .mn,.buddy.wave .mn{display:none}
+.buddy.sad .ms{display:inline}.buddy.sad .mn{display:none}
+.buddy.happy .bd-body{animation:bd-hop .55s cubic-bezier(.3,1.6,.5,1) 3}
+.buddy.happy .bd-arm-r,.buddy.wave .bd-arm-r{animation:bd-armwave .3s ease-in-out 6 alternate}
+.buddy.sad .bd-body{animation:bd-wobble .9s ease-in-out}
+.bubble{position:relative;background:#f4f6ff;color:#151a38;border-radius:16px;padding:10px 14px;font-size:1rem;line-height:1.35;align-self:center;min-width:0;overflow-wrap:anywhere;box-shadow:0 3px 0 rgba(0,0,0,.25)}
+.bubble::before{content:"";position:absolute;left:-8px;bottom:14px;border:8px solid transparent;border-right-color:#f4f6ff;border-left:0}
+.bubble b{font-family:var(--f-display);font-weight:700;color:#3b2fa0}
+.bubble.pop{animation:pop .35s ease-out}
+.taunt{display:block;margin-top:6px;font-size:.88rem;color:#a04a00;font-style:italic}
+.boss-card .taunt{color:var(--gold)}
+.boss{width:78px;flex:none}
+.boss.small{width:90px}
+.boss svg{display:block;width:100%;height:auto;overflow:visible}
+.boss-body{transform-box:fill-box;transform-origin:50% 100%;animation:boss-idle 2.4s ease-in-out infinite}
+.boss.hit .boss-body{animation:boss-hit .5s ease-out}
+.boss.laugh .boss-body{animation:boss-laugh .25s ease-in-out 5 alternate}
+.boss.ko .boss-body{animation:boss-ko .9s ease-in forwards}
+.boss-name{font-family:var(--f-display);font-weight:600;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hpbar{height:12px;border-radius:99px;background:#2a0f1a;border:1px solid #6b2b36;overflow:hidden}
+.hpbar>i{display:block;height:100%;background:linear-gradient(90deg,#FF4D4D,#FF9A5B);transition:width .5s cubic-bezier(.3,1.4,.5,1)}
+.combo{display:inline-block;align-self:flex-start;font-family:var(--f-display);font-weight:700;color:#241800;background:var(--gold);border-radius:99px;padding:2px 10px;font-size:.85rem;animation:combo-pulse .6s ease-in-out infinite alternate}
+.crew{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:8px}
+.crew-item{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 4px;border-radius:14px;border:2px solid var(--line);background:var(--night2);min-width:0}
+.crew-item:hover:not([disabled]){border-color:var(--sky)}
+.crew-item.sel{border-color:var(--gold);background:#2a2550}
+.crew-item.locked{opacity:.55;cursor:not-allowed}
+.crew-item.locked .buddy{filter:grayscale(1) brightness(.5)}
+.crew-n{font-family:var(--f-display);font-weight:600;font-size:.9rem;text-align:center}
+.crew-r{font-size:.72rem;color:var(--muted);text-align:center;line-height:1.2}
+.fight{display:flex;align-items:center;justify-content:center;gap:18px}
+.fight .buddy{width:110px}.fight .boss{width:110px}
+.vs{font-family:var(--f-display);font-weight:700;font-size:1.8rem;color:var(--coral)}
+.fight-title{font-family:var(--f-display);font-size:1.4rem;font-weight:700;margin-top:8px}
+.levelup{font-family:var(--f-display);font-weight:700;font-size:1.2rem;color:var(--gold);margin-top:8px;animation:combo-pulse .6s ease-in-out infinite alternate}
+.confetti{position:fixed;inset:0;pointer-events:none;z-index:50;overflow:hidden}
+.confetti i{position:absolute;top:38%;border-radius:2px;animation:conf 1.4s cubic-bezier(.2,.7,.4,1) forwards}
+@keyframes conf{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--dx),var(--dy)) rotate(var(--r));opacity:0}}
+@keyframes bd-breathe{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-2px) scaleY(1.02)}}
+@keyframes bd-blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+@keyframes bd-bob{from{transform:translateY(0)}to{transform:translateY(-4px)}}
+@keyframes bd-wave{from{transform:rotate(-6deg)}to{transform:rotate(8deg)}}
+@keyframes bd-glow{from{opacity:.6}to{opacity:1}}
+@keyframes bd-hop{0%{transform:translateY(0) scale(1,1)}30%{transform:translateY(0) scale(1.1,.88)}60%{transform:translateY(-22px) scale(.95,1.08) rotate(-4deg)}100%{transform:translateY(0) scale(1,1)}}
+@keyframes bd-armwave{from{transform:rotate(0)}to{transform:rotate(-55deg)}}
+@keyframes bd-wobble{0%,100%{transform:rotate(0)}20%{transform:rotate(-12deg)}40%{transform:rotate(10deg)}60%{transform:rotate(-6deg)}80%{transform:rotate(3deg)}}
+@keyframes boss-idle{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-3px) scale(1.03,.97)}}
+@keyframes boss-hit{0%{transform:translateX(0);filter:none}20%{transform:translateX(10px) rotate(6deg);filter:brightness(2.2)}50%{transform:translateX(-6px) rotate(-4deg)}100%{transform:none;filter:none}}
+@keyframes boss-laugh{from{transform:translateY(0) rotate(-3deg)}to{transform:translateY(-6px) rotate(3deg)}}
+@keyframes boss-ko{0%{transform:none;opacity:1}30%{transform:rotate(-20deg) scale(1.1)}100%{transform:translateY(20px) rotate(90deg) scale(.4);opacity:.25}}
+@keyframes combo-pulse{from{transform:scale(1)}to{transform:scale(1.08)}}
+@media (max-width:560px){.hud-boss{flex:1 1 100%;justify-content:flex-start}.buddy{width:70px}.crew-r{display:none}}
+@media (prefers-reduced-motion:reduce){.bd-body,.bd-eyes,.bd-ant,.bd-scarf,.bd-light,.boss-body,.combo,.levelup,.buddy .bd-arm-r{animation:none!important}}
