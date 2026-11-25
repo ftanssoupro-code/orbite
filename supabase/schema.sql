@@ -43,3 +43,15 @@ create policy "own sessions" on public.sessions for all
 drop policy if exists "own ai usage" on public.ai_usage;
 create policy "own ai usage" on public.ai_usage for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Coach : devoirs et questions sur mesure écrits par le coach (lecture seule pour l'élève)
+create table if not exists public.coach (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+grant select on public.coach to authenticated;
+revoke all on public.coach from anon;
+alter table public.coach enable row level security;
+drop policy if exists "read own coach" on public.coach;
+create policy "read own coach" on public.coach for select using (auth.uid() = user_id);
